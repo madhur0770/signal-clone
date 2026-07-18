@@ -195,7 +195,7 @@ async def send_message(
 
 
 @router.patch("/messages/{message_id}/status", response_model=MessageStatusRead)
-def update_message_status(
+async def update_message_status(
     message_id: int,
     payload: MessageStatusUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -225,4 +225,16 @@ def update_message_status(
     db.add(msg_status)
     db.commit()
     db.refresh(msg_status)
+
+    from app.routers.websocket import manager
+    
+    event = {
+        "type": "message_status",
+        "message_id": message_id,
+        "user_id": current_user.id,
+        "status": payload.status,
+        "conversation_id": message.conversation_id,
+    }
+    await manager.broadcast_to_conversation(message.conversation_id, event, db)
+
     return MessageStatusRead.model_validate(msg_status)
