@@ -71,10 +71,49 @@ export default function WebSocketBridge() {
       loadConversations();
     });
 
+    const unsubStatus = wsClient.on("message_status", (data) => {
+      const { message_id, user_id, status, conversation_id } = data as {
+        message_id: number;
+        user_id: number;
+        status: string;
+        conversation_id: number;
+      };
+
+      if (!user) return;
+
+      useStore.setState((state) => {
+        const messages = state.messagesByConversation[conversation_id] ?? [];
+        const updatedMessages = messages.map((msg) => {
+          if (msg.id !== message_id) return msg;
+          return {
+            ...msg,
+            statuses: msg.statuses.map((s) =>
+              s.user_id === user_id ? { ...s, status: status as any } : s
+            ),
+          };
+        });
+
+        return {
+          messagesByConversation: {
+            ...state.messagesByConversation,
+            [conversation_id]: updatedMessages,
+          },
+          previews: {
+            ...state.previews,
+            [conversation_id]: {
+              ...state.previews[conversation_id],
+              unreadCount: getUnreadCount(updatedMessages, user.id),
+            },
+          },
+        };
+      });
+    });
+
     return () => {
       unsubMessage();
       unsubTyping();
       unsubConversationCreated();
+      unsubStatus();
     };
   }, [token, user, setTyping, loadConversations, activeConversationId, addToast]);
 
