@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, Settings, UserPlus, Users } from "lucide-react";
+import { Camera, Search, Settings, UserPlus, Users } from "lucide-react";
 import Link from "next/link";
 
 import Avatar from "@/components/Avatar";
@@ -22,6 +22,7 @@ export default function Sidebar() {
   const previews = useStore((s) => s.previews);
   const activeId = useStore((s) => s.activeConversationId);
   const selectConversation = useStore((s) => s.selectConversation);
+  const addToast = useStore((s) => s.addToast);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -68,6 +69,17 @@ export default function Sidebar() {
               className="w-full rounded-xl border border-border bg-surface py-2.5 pl-10 pr-4 text-sm text-foreground placeholder:text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
             />
           </div>
+        </div>
+
+        <div className="px-4 pb-3">
+          <button
+            type="button"
+            onClick={() => addToast("Stories", "Coming soon")}
+            className="flex w-full items-center gap-3 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-medium text-foreground transition hover:border-accent/40 hover:bg-accent/5"
+          >
+            <Camera className="h-4 w-4" />
+            Stories
+          </button>
         </div>
 
         <div className="flex gap-2 px-4 pb-3">
