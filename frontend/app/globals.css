@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f5f5f7;
+  --foreground: #1c1c1e;
+  --panel: #ffffff;
+  --surface: #f5f5f7;
+  --border: #e5e5ea;
+  --muted: #8e8e93;
+  --accent: #2c6bed;
+  --accent-hover: #245fd4;
+  --online: #34c759;
+  --bubble-sent: #2c6bed;
+  --bubble-received: #ffffff;
+}
+
+.dark {
+  --background: #0f0f11;
+  --foreground: #f2f2f7;
+  --panel: #1c1c1e;
+  --surface: #0f0f11;
+  --border: #2c2c2e;
+  --muted: #98989d;
+  --accent: #4d8bf5;
+  --accent-hover: #3b7ae8;
+  --online: #30d158;
+  --bubble-sent: #2c6bed;
+  --bubble-received: #2c2c2e;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-panel: var(--panel);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-online: var(--online);
+  --font-sans: var(--font-inter);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter), system-ui, -apple-system, sans-serif;
+}
+
+.bg-login-gradient {
+  background: linear-gradient(145deg, #4f46e5 0%, #2c6bed 45%, #6366f1 100%);
+}
+
+.bubble-sent {
+  background: var(--bubble-sent);
+  box-shadow: 0 1px 2px rgb(44 107 237 / 25%);
+}
+
+.bubble-received {
+  background: var(--bubble-received);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
+}
+
+.dark .bubble-received {
+  box-shadow: 0 1px 3px rgb(0 0 0 / 25%);
+}
+
+.rounded-bubble-sent {
+  border-radius: 18px 18px 4px 18px;
+}
+
+.rounded-bubble-received {
+  border-radius: 18px 18px 18px 4px;
+}
+
+@keyframes typing-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+.typing-dot {
+  animation: typing-bounce 1.2s infinite ease-in-out;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
