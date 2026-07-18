@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 
 import { useStore } from "@/store/useStore";
+import { searchUsers } from "@/lib/api";
+import type { User } from "@/types";
 
 interface NewChatModalProps {
   mode: "direct" | "group";
@@ -15,16 +17,63 @@ export default function NewChatModal({ mode, onClose }: NewChatModalProps) {
   const startDirectChat = useStore((s) => s.startDirectChat);
   const startGroupChat = useStore((s) => s.startGroupChat);
   const selectConversation = useStore((s) => s.selectConversation);
+  const addContactById = useStore((s) => s.addContactById);
+  const loadContacts = useStore((s) => s.loadContacts);
 
   const [groupName, setGroupName] = useState("");
   const [selected, setSelected] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<User[]>([]);
+  const [addingId, setAddingId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const results = await searchUsers(searchQuery);
+        setSearchResults(results);
+      } catch (err) {
+        console.error("Search failed", err);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   const toggleMember = (id: number) => {
     setSelected((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
+  };
+
+  const handleAddContact = async (userId: number) => {
+    setAddingId(userId);
+    setError("");
+    try {
+      await addContactById(userId);
+      await loadContacts();
+      setSearchQuery("");
+      setSearchResults([]);
+    } catch {
+      setError("Failed to add contact");
+    } finally {
+      setAddingId(null);
+    }
   };
 
   const handleDirect = async (contactUserId: number) => {
@@ -82,7 +131,40 @@ export default function NewChatModal({ mode, onClose }: NewChatModalProps) {
           />
         )}
 
-        {contacts.length === 0 ? (
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search by username or phone"
+          className="mb-4 w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-sm focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+        />
+
+        {searchQuery.trim() ? (
+          <ul className="max-h-64 space-y-1 overflow-y-auto">
+            {searchResults.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted">No users found.</p>
+            ) : (
+              searchResults.map((u) => (
+                <li
+                  key={u.id}
+                  className="flex items-center justify-between rounded-xl px-3 py-2.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
+                >
+                  <span className="font-medium text-foreground">
+                    {u.display_name || u.username || u.phone_number}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleAddContact(u.id)}
+                    disabled={addingId === u.id}
+                    className="rounded-lg bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-accent/20 disabled:opacity-50"
+                  >
+                    {addingId === u.id ? "Adding..." : "Add"}
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        ) : contacts.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted">
             No contacts yet. Add contacts via the API or seed data.
           </p>

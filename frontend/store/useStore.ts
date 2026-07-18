@@ -25,7 +25,9 @@ import type {
   User,
 } from "@/types";
 
-const EMPTY_MESSAGES: Message[] = [];
+export type ClientMessage = Message & { pending?: boolean };
+
+const EMPTY_MESSAGES: ClientMessage[] = [];
 
 interface AppState {
   token: string | null;
@@ -35,10 +37,11 @@ interface AppState {
   conversations: Conversation[];
   contacts: Contact[];
   activeConversationId: number | null;
-  messagesByConversation: Record<number, Message[]>;
+  messagesByConversation: Record<number, ClientMessage[]>;
   previews: Record<number, ConversationPreview>;
   typingByConversation: Record<number, number[]>;
   darkMode: boolean;
+  toasts: { id: string; title: string; body: string }[];
 
   setHydrated: () => void;
   setDarkMode: (dark: boolean) => void;
@@ -59,14 +62,16 @@ interface AppState {
   startDirectChat: (contactUserId: number) => Promise<Conversation>;
   startGroupChat: (name: string, memberIds: number[]) => Promise<Conversation>;
   addContactById: (contactUserId: number) => Promise<void>;
+  addToast: (title: string, body: string) => void;
+  removeToast: (id: string) => void;
 }
 
 function updatePreview(
   previews: Record<number, ConversationPreview>,
   conversationId: number,
-  message: Message,
+  message: ClientMessage,
   userId: number,
-  messages: Message[]
+  messages: ClientMessage[]
 ): Record<number, ConversationPreview> {
   return {
     ...previews,
@@ -92,6 +97,7 @@ export const useStore = create<AppState>()(
       previews: {},
       typingByConversation: {},
       darkMode: false,
+      toasts: [],
 
       setHydrated: () => set({ isHydrated: true }),
 
@@ -120,6 +126,7 @@ export const useStore = create<AppState>()(
           messagesByConversation: {},
           previews: {},
           typingByConversation: {},
+          toasts: [],
         });
       },
 
@@ -187,16 +194,22 @@ export const useStore = create<AppState>()(
                 : state.previews,
             };
           });
+        }
 
-          for (const msg of messages) {
-            if (msg.sender_id !== user.id) {
-              const myStatus = msg.statuses.find((s) => s.user_id === user.id);
-              if (myStatus && myStatus.status !== "read") {
-                await updateMessageStatus(msg.id, "read");
-              }
+        const currentMessages = get().messagesByConversation[id] ?? [];
+        let hasUpdates = false;
+
+        for (const msg of currentMessages) {
+          if (msg.sender_id !== user.id) {
+            const myStatus = msg.statuses.find((s) => s.user_id === user.id);
+            if (myStatus && myStatus.status !== "read") {
+              await updateMessageStatus(msg.id, "read");
+              hasUpdates = true;
             }
           }
+        }
 
+        if (hasUpdates) {
           const refreshed = await getMessages(id);
           set((state) => {
             const last = refreshed[refreshed.length - 1];
@@ -217,13 +230,25 @@ export const useStore = create<AppState>()(
         const { activeConversationId, user } = get();
         if (!activeConversationId || !user || !content.trim()) return;
 
-        const message = await apiSendMessage(
-          activeConversationId,
-          content.trim()
-        );
+        // 1 & 2 & 3. Create the temporary optimistic message
+        const tempId = -Date.now();
+        const tempMessage: ClientMessage = {
+          id: tempId,
+          conversation_id: activeConversationId,
+          sender_id: user.id,
+          content: content.trim(),
+          type: "text",
+          reply_to_message_id: null,
+          created_at: new Date().toISOString(),
+          sender: user,
+          statuses: [],
+          pending: true,
+        };
+
+        // Optimistic insertion
         set((state) => {
           const existing = state.messagesByConversation[activeConversationId] ?? [];
-          const updated = [...existing, message];
+          const updated = [...existing, tempMessage];
           return {
             messagesByConversation: {
               ...state.messagesByConversation,
@@ -232,14 +257,14 @@ export const useStore = create<AppState>()(
             previews: updatePreview(
               state.previews,
               activeConversationId,
-              message,
+              tempMessage,
               user.id,
               updated
             ),
             conversations: state.conversations
               .map((c) =>
                 c.id === activeConversationId
-                  ? { ...c, updated_at: message.created_at }
+                  ? { ...c, updated_at: tempMessage.created_at }
                   : c
               )
               .sort(
@@ -249,6 +274,79 @@ export const useStore = create<AppState>()(
               ),
           };
         });
+
+        // 4. API Call
+        try {
+          const message = await apiSendMessage(
+            activeConversationId,
+            content.trim()
+          );
+
+          set((state) => {
+            const existing = state.messagesByConversation[activeConversationId] ?? [];
+            
+            // Check if the WebSocket already delivered the real message before the API resolved
+            const alreadyExists = existing.some((m) => m.id === message.id);
+            const updated = alreadyExists 
+              ? existing.filter((m) => m.id !== tempId) // Just clean up the temp one
+              : existing.map((m) => (m.id === tempId ? message : m)); // Swap in the real one
+
+            return {
+              messagesByConversation: {
+                ...state.messagesByConversation,
+                [activeConversationId]: updated,
+              },
+              previews: updatePreview(
+                state.previews,
+                activeConversationId,
+                message,
+                user.id,
+                updated
+              ),
+              conversations: state.conversations
+                .map((c) =>
+                  c.id === activeConversationId
+                    ? { ...c, updated_at: message.created_at }
+                    : c
+                )
+                .sort(
+                  (a, b) =>
+                    new Date(b.updated_at).getTime() -
+                    new Date(a.updated_at).getTime()
+                ),
+            };
+          });
+        } catch (error) {
+          // 5. Rollback on failure
+          set((state) => {
+            const existing = state.messagesByConversation[activeConversationId] ?? [];
+            const updated = existing.filter((m) => m.id !== tempId);
+            const last = updated[updated.length - 1];
+
+            return {
+              messagesByConversation: {
+                ...state.messagesByConversation,
+                [activeConversationId]: updated,
+              },
+              previews: last
+                ? updatePreview(state.previews, activeConversationId, last, user.id, updated)
+                : state.previews,
+              conversations: state.conversations
+                .map((c) =>
+                  c.id === activeConversationId
+                    ? { ...c, updated_at: last ? last.created_at : c.updated_at }
+                    : c
+                )
+                .sort(
+                  (a, b) =>
+                    new Date(b.updated_at).getTime() -
+                    new Date(a.updated_at).getTime()
+                ),
+            };
+          });
+          
+          throw error;
+        }
       },
 
       addIncomingMessage: (message) => {
@@ -343,6 +441,17 @@ export const useStore = create<AppState>()(
         const contact = await addContact(contactUserId);
         set((state) => ({ contacts: [...state.contacts, contact] }));
       },
+
+      addToast: (title, body) => {
+        const id = crypto.randomUUID();
+        set((state) => ({ toasts: [...state.toasts, { id, title, body }] }));
+        setTimeout(() => get().removeToast(id), 4000);
+      },
+
+      removeToast: (id) =>
+        set((state) => ({
+          toasts: state.toasts.filter((t) => t.id !== id),
+        })),
     }),
     {
       name: "signal-clone-store",

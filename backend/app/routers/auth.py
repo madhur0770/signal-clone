@@ -7,6 +7,7 @@ from app.auth import (
     create_session,
     generate_username,
     get_current_user,
+    validate_phone_number,
     verify_otp,
 )
 from app.database import get_session
@@ -18,6 +19,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/request-otp")
 def request_otp(payload: OTPRequest) -> dict[str, str]:
+    validate_phone_number(payload.phone_number)
     # Mock OTP: always succeeds; use code 123456 to verify.
     return {
         "message": "OTP sent (mock). Use code 123456 to verify.",
@@ -30,6 +32,7 @@ def verify_otp_and_login(
     payload: OTPVerify,
     db: Annotated[Session, Depends(get_session)],
 ) -> TokenResponse:
+    validate_phone_number(payload.phone_number)
     if not verify_otp(payload.otp):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

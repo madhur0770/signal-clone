@@ -73,6 +73,24 @@ export async function addContact(
   return data;
 }
 
+export async function searchUsers(query: string): Promise<User[]> {
+  if (!query.trim()) return [];
+  const { data } = await api.get<User[]>("/contacts/search", {
+    params: { q: query },
+  });
+  return data;
+}
+
+export async function blockContact(contactId: number): Promise<Contact> {
+  const { data } = await api.post<Contact>(`/contacts/${contactId}/block`);
+  return data;
+}
+
+export async function unblockContact(contactId: number): Promise<Contact> {
+  const { data } = await api.post<Contact>(`/contacts/${contactId}/unblock`);
+  return data;
+}
+
 // Conversations
 export async function getConversations(): Promise<Conversation[]> {
   const { data } = await api.get<Conversation[]>("/conversations");
@@ -86,6 +104,24 @@ export async function createConversation(payload: {
 }): Promise<Conversation> {
   const { data } = await api.post<Conversation>("/conversations", payload);
   return data;
+}
+
+export async function addMember(
+  conversationId: number,
+  userId: number
+): Promise<Conversation> {
+  const { data } = await api.post<Conversation>(
+    `/conversations/${conversationId}/members`,
+    { user_id: userId }
+  );
+  return data;
+}
+
+export async function removeMember(
+  conversationId: number,
+  userId: number
+): Promise<void> {
+  await api.delete(`/conversations/${conversationId}/members/${userId}`);
 }
 
 // Messages

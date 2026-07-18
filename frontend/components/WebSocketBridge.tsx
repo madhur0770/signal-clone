@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 
 import { getMessages } from "@/lib/api";
-import { getLastMessagePreview, getUnreadCount } from "@/lib/utils";
+import { getConversationTitle, getLastMessagePreview, getUnreadCount } from "@/lib/utils";
 import { wsClient } from "@/lib/ws";
 import { useStore } from "@/store/useStore";
 
@@ -12,6 +12,8 @@ export default function WebSocketBridge() {
   const user = useStore((s) => s.user);
   const setTyping = useStore((s) => s.setTyping);
   const loadConversations = useStore((s) => s.loadConversations);
+  const activeConversationId = useStore((s) => s.activeConversationId);
+  const addToast = useStore((s) => s.addToast);
 
   useEffect(() => {
     if (!token) return;
@@ -43,6 +45,13 @@ export default function WebSocketBridge() {
               }
             : state.previews,
         }));
+
+        if (last && payload.conversation_id !== activeConversationId && last.sender_id !== user.id) {
+          const conversation = useStore.getState().conversations.find((c) => c.id === payload.conversation_id);
+          const title = conversation ? getConversationTitle(conversation, user.id) : "New message";
+          const body = getLastMessagePreview(last);
+          addToast(title, body);
+        }
       } catch {
         // ignore
       }
@@ -58,11 +67,16 @@ export default function WebSocketBridge() {
       }
     });
 
+    const unsubConversationCreated = wsClient.on("conversation_created", () => {
+      loadConversations();
+    });
+
     return () => {
       unsubMessage();
       unsubTyping();
+      unsubConversationCreated();
     };
-  }, [token, user, setTyping, loadConversations]);
+  }, [token, user, setTyping, loadConversations, activeConversationId, addToast]);
 
   return null;
 }

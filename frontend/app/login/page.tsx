@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MessageSquare } from "lucide-react";
+import { isAxiosError } from "axios";
 
 import { requestOtp } from "@/lib/api";
 import { useStore } from "@/store/useStore";
@@ -34,8 +35,12 @@ export default function LoginPage() {
     try {
       await requestOtp(phone);
       setStep("otp");
-    } catch {
-      setError("Could not send OTP. Is the backend running?");
+    } catch (err) {
+      if (isAxiosError(err) && err.response?.data?.detail) {
+        setError(err.response.data.detail);
+      } else {
+        setError("Could not send OTP. Is the backend running?");
+      }
     } finally {
       setLoading(false);
     }
@@ -53,8 +58,12 @@ export default function LoginPage() {
         displayName || undefined
       );
       router.replace("/");
-    } catch {
-      setError("Invalid OTP. Use 123456 for the mock code.");
+    } catch (err) {
+      if (isAxiosError(err) && err.response?.data?.detail) {
+        setError(err.response.data.detail);
+      } else {
+        setError("Invalid OTP. Use 123456 for the mock code.");
+      }
     } finally {
       setLoading(false);
     }

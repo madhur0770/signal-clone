@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 
 import ThemeProvider from "@/components/ThemeProvider";
+import ToastContainer from "@/components/Toast";
 import "./globals.css";
 
 const inter = Inter({
@@ -24,6 +25,7 @@ export default function RootLayout({
       <body className="h-full overflow-hidden">
         <ThemeProvider />
         {children}
+        <ToastContainer />
       </body>
     </html>
   );

@@ -20,6 +20,7 @@ export interface Contact {
   owner_id: number;
   contact_user_id: number;
   nickname: string | null;
+  is_blocked: boolean;
   created_at: string;
   contact_user: User;
 }
