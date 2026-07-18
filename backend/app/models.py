@@ -65,6 +65,7 @@ class Contact(SQLModel, table=True):
     owner_id: int = Field(foreign_key="users.id", index=True)
     contact_user_id: int = Field(foreign_key="users.id", index=True)
     nickname: Optional[str] = None
+    is_blocked: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     owner: User = Relationship(

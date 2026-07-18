@@ -1,4 +1,5 @@
 import os
+import re
 import secrets
 from datetime import datetime, timedelta
 from typing import Annotated
@@ -21,6 +22,14 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1008
 MOCK_OTP_CODE = "123456"
 
 security = HTTPBearer()
+
+
+def validate_phone_number(phone_number: str) -> None:
+    if not re.match(r"^\+[1-9]\d{9,14}$", phone_number):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid phone number format. Use format: +[country code][number], e.g. +15550010001",
+        )
 
 
 def create_access_token(user_id: int) -> tuple[str, datetime]:

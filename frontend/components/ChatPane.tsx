@@ -1,5 +1,7 @@
 "use client";
 
+import axios from "axios";
+
 import ChatHeader from "@/components/ChatHeader";
 import MessageInput from "@/components/MessageInput";
 import MessageList from "@/components/MessageList";
@@ -24,6 +26,19 @@ export default function ChatPane({ conversation }: ChatPaneProps) {
     (s) => s.typingByConversation[conversation.id] ?? EMPTY_TYPING_IDS
   );
   const sendMessage = useStore((s) => s.sendMessage);
+  const addToast = useStore((s) => s.addToast);
+
+  const handleSend = async (content: string) => {
+    try {
+      await sendMessage(content);
+    } catch (err) {
+      const message =
+        axios.isAxiosError(err) && err.response?.data?.detail
+          ? err.response.data.detail
+          : "Failed to send message";
+      addToast("Message not sent", message);
+    }
+  };
 
   const typingNames = typingIds
     .filter((id) => id !== user.id)
@@ -39,7 +54,7 @@ export default function ChatPane({ conversation }: ChatPaneProps) {
       <TypingIndicator names={typingNames} />
       <MessageInput
         conversationId={conversation.id}
-        onSend={sendMessage}
+        onSend={handleSend}
       />
     </div>
   );

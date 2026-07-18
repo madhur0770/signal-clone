@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from app.auth import get_current_user
@@ -21,6 +22,10 @@ from app.schemas import (
 )
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
+
+
+class AddMemberRequest(BaseModel):
+    user_id: int
 
 
 def _build_conversation_read(
@@ -86,7 +91,7 @@ def list_conversations(
 
 
 @router.post("", response_model=ConversationRead, status_code=status.HTTP_201_CREATED)
-def create_conversation(
+async def create_conversation(
     payload: ConversationCreate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_session)],
@@ -144,7 +149,18 @@ def create_conversation(
         )
     db.commit()
     db.refresh(conversation)
-    return _build_conversation_read(conversation, db)
+
+    # Broadcast creation event to all members
+    from app.routers.websocket import manager
+
+    conversation_data = _build_conversation_read(conversation, db)
+    event = {
+        "type": "conversation_created",
+        "conversation": conversation_data.model_dump(mode="json"),
+    }
+    await manager.broadcast_to_conversation(conversation.id, event, db)
+
+    return conversation_data
 
 
 @router.get("/{conversation_id}", response_model=ConversationRead)
@@ -161,3 +177,106 @@ def get_conversation(
     if not _user_is_member(conversation_id, current_user.id, db):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member")
     return _build_conversation_read(conversation, db)
+
+
+@router.post("/{conversation_id}/members", response_model=ConversationRead)
+async def add_member(
+    conversation_id: int,
+    payload: AddMemberRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> ConversationRead:
+    conversation = db.get(Conversation, conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+
+    if conversation.type != ConversationType.GROUP:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot add members to a direct conversation",
+        )
+
+    current_member = db.exec(
+        select(ConversationMember).where(
+            ConversationMember.conversation_id == conversation_id,
+            ConversationMember.user_id == current_user.id,
+        )
+    ).first()
+    
+    if not current_member or current_member.role != MemberRole.ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can add members")
+
+    target_user = db.get(User, payload.user_id)
+    if not target_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if _user_is_member(conversation_id, payload.user_id, db):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User is already a member")
+
+    new_member = ConversationMember(
+        conversation_id=conversation.id,
+        user_id=payload.user_id,
+        role=MemberRole.MEMBER,
+    )
+    db.add(new_member)
+    db.commit()
+
+    from app.routers.websocket import manager
+
+    conversation_data = _build_conversation_read(conversation, db)
+    event = {
+        "type": "member_added",
+        "conversation": conversation_data.model_dump(mode="json"),
+    }
+    await manager.broadcast_to_conversation(conversation.id, event, db)
+
+    return conversation_data
+
+
+@router.delete("/{conversation_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_member(
+    conversation_id: int,
+    user_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> None:
+    conversation = db.get(Conversation, conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+
+    if conversation.type != ConversationType.GROUP:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot remove members from a direct conversation")
+
+    current_member = db.exec(
+        select(ConversationMember).where(
+            ConversationMember.conversation_id == conversation_id,
+            ConversationMember.user_id == current_user.id,
+        )
+    ).first()
+
+    # Must be admin unless they are removing themselves
+    if current_user.id != user_id:
+        if not current_member or current_member.role != MemberRole.ADMIN:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can remove members")
+
+    target_member = db.exec(
+        select(ConversationMember).where(
+            ConversationMember.conversation_id == conversation_id,
+            ConversationMember.user_id == user_id,
+        )
+    ).first()
+
+    if not target_member:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User is not a member")
+
+    db.delete(target_member)
+    db.commit()
+
+    from app.routers.websocket import manager
+
+    event = {
+        "type": "member_removed",
+        "conversation_id": conversation_id,
+        "removed_user_id": user_id,
+    }
+    await manager.broadcast_to_conversation(conversation.id, event, db)

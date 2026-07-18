@@ -68,6 +68,7 @@ class ContactRead(BaseModel):
     owner_id: int
     contact_user_id: int
     nickname: Optional[str] = None
+    is_blocked: bool
     created_at: datetime
     contact_user: UserRead
 

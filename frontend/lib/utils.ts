@@ -2,6 +2,13 @@ import { format, formatDistanceToNow, isToday, isYesterday, parseISO } from "dat
 
 import type { Conversation, Message, User } from "@/types";
 
+function parseUtcDate(dateStr: string): Date {
+  // Backend sends naive UTC timestamps without a timezone marker.
+  // Force UTC interpretation by appending "Z" if it's missing.
+  const hasTimezone = /Z$|[+-]\d{2}:\d{2}$/.test(dateStr);
+  return parseISO(hasTimezone ? dateStr : `${dateStr}Z`);
+}
+
 export function getInitials(name: string): string {
   return name
     .split(" ")
@@ -51,7 +58,7 @@ export function getOtherMember(
 }
 
 export function formatMessageTime(dateStr: string): string {
-  const date = parseISO(dateStr);
+  const date = parseUtcDate(dateStr);
   if (isToday(date)) return format(date, "h:mm a");
   if (isYesterday(date)) return "Yesterday";
   return format(date, "MMM d");
@@ -60,7 +67,7 @@ export function formatMessageTime(dateStr: string): string {
 export function formatLastSeen(user: User): string {
   if (user.is_online) return "Online";
   if (!user.last_seen) return "Offline";
-  return `Last seen ${formatDistanceToNow(parseISO(user.last_seen), { addSuffix: true })}`;
+  return `Last seen ${formatDistanceToNow(parseUtcDate(user.last_seen), { addSuffix: true })}`;
 }
 
 export function getUnreadCount(messages: Message[], userId: number): number {

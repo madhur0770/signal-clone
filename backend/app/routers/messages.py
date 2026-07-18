@@ -7,8 +7,10 @@ from sqlmodel import Session, select
 from app.auth import get_current_user
 from app.database import get_session
 from app.models import (
+    Contact,
     Conversation,
     ConversationMember,
+    ConversationType,
     DeliveryStatus,
     Message,
     MessageStatus,
@@ -88,7 +90,7 @@ def list_messages(
     response_model=MessageRead,
     status_code=status.HTTP_201_CREATED,
 )
-def send_message(
+async def send_message(
     conversation_id: int,
     payload: MessageCreate,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -101,6 +103,37 @@ def send_message(
         )
     if not _user_is_member(conversation_id, current_user.id, db):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member")
+
+    if conversation.type == ConversationType.DIRECT:
+        members = db.exec(
+            select(ConversationMember).where(
+                ConversationMember.conversation_id == conversation_id
+            )
+        ).all()
+        other_member = next((m for m in members if m.user_id != current_user.id), None)
+        
+        if other_member:
+            i_blocked_them = db.exec(
+                select(Contact).where(
+                    Contact.owner_id == current_user.id,
+                    Contact.contact_user_id == other_member.user_id,
+                    Contact.is_blocked == True,
+                )
+            ).first()
+            
+            they_blocked_me = db.exec(
+                select(Contact).where(
+                    Contact.owner_id == other_member.user_id,
+                    Contact.contact_user_id == current_user.id,
+                    Contact.is_blocked == True,
+                )
+            ).first()
+            
+            if i_blocked_them or they_blocked_me:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Cannot send message: this contact is blocked",
+                )
 
     if payload.reply_to_message_id:
         reply_msg = db.get(Message, payload.reply_to_message_id)
@@ -142,6 +175,21 @@ def send_message(
             )
         )
     db.commit()
+
+    from app.routers.websocket import manager
+    
+    event = {
+        "type": "message",
+        "message": {
+            "id": message.id,
+            "conversation_id": message.conversation_id,
+            "sender_id": message.sender_id,
+            "content": message.content,
+            "created_at": message.created_at.isoformat(),
+        },
+    }
+    
+    await manager.broadcast_to_conversation(conversation_id, event, db)
 
     return _build_message_read(message, db)
 
