@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-import { getMessages } from "@/lib/api";
+import { getMessages, updateMessageStatus } from "@/lib/api";
 import { getConversationTitle, getLastMessagePreview, getUnreadCount } from "@/lib/utils";
 import { wsClient } from "@/lib/ws";
 import { useStore } from "@/store/useStore";
@@ -22,6 +22,7 @@ export default function WebSocketBridge() {
       const payload = data.message as {
         id: number;
         conversation_id: number;
+        sender_id: number;
       } | undefined;
 
       if (!payload || !user) return;
@@ -45,6 +46,11 @@ export default function WebSocketBridge() {
               }
             : state.previews,
         }));
+
+        // Handle active conversation read marking
+        if (payload.conversation_id === activeConversationId && payload.sender_id !== user.id) {
+          updateMessageStatus(payload.id, "read");
+        }
 
         if (last && payload.conversation_id !== activeConversationId && last.sender_id !== user.id) {
           const conversation = useStore.getState().conversations.find((c) => c.id === payload.conversation_id);
