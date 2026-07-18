@@ -3,10 +3,8 @@
 A functional clone of Signal Messenger — real-time one-on-one and group messaging, built as an SDE Fullstack assignment. Recreates Signal's core UX (conversation list, chat bubbles, delivery/read receipts, typing indicators) with a FastAPI backend and a Next.js frontend. End-to-end encryption is simulated/mocked per the assignment brief — message content is stored as plaintext for demo purposes.
 
 **GitHub repo:** https://github.com/madhur0770/signal-clone
-**Live demo:** https://signal-clone-liard.vercel.app
-**Backend API:** https://signal-clone-production-df99.up.railway.app/docs
-
-Deployed on Railway (backend, with a persistent volume for SQLite) and Vercel (frontend). See `DEPLOYMENT.md` for the full deployment writeup.
+**Live demo (frontend):** https://signal-clone-liard.vercel.app
+**Backend API:** https://signal-clone-production-df99.up.railway.app (interactive docs at `/docs`)
 
 ---
 
@@ -180,6 +178,8 @@ All routes are prefixed with `/api`. Auth via `Authorization: Bearer <token>` he
 
 ## Setup Instructions
 
+The app is already deployed and live (see links above) — the steps below are only needed for running it locally.
+
 ### Backend
 
 ```bash
@@ -191,23 +191,13 @@ python -m venv venv
 source venv/bin/activate
 
 pip install -r requirements.txt
-cp .env.example .env   # see Environment Variables below
+cp .env.example .env   # fill in any required values, e.g. JWT secret
 
 python -m app.seed              # seeds sample users/contacts/conversations/messages
 uvicorn app.main:app --reload --port 8000
 ```
 
 Backend runs at `http://localhost:8000`. Interactive API docs at `http://localhost:8000/docs`.
-
-**Environment variables** (`backend/.env`):
-
-| Variable | Default | Notes |
-|---|---|---|
-| `DATABASE_URL` | `sqlite:///./signal_clone.db` | File-based SQLite; swap for a Postgres URL in production if desired |
-| `SECRET_KEY` | `change-me-in-production` | JWT signing key — **must** be changed to a random value before any real/deployed use |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | `10080` (7 days) | JWT + session lifetime |
-
-> **CORS note:** `backend/app/main.py` currently allows only `http://localhost:3000` as an origin. If you deploy the frontend elsewhere, add that origin to `allow_origins` in `main.py` before deploying — otherwise the deployed frontend's requests will be blocked by the browser.
 
 ### Frontend
 
