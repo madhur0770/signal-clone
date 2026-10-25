@@ -2,7 +2,9 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from sqlmodel import Field, Relationship, SQLModel
+from sqlmodel import Field, Relationship, SQLModel, UniqueConstraint
+
+from app.timeutil import utcnow
 
 
 class ConversationType(str, Enum):
@@ -38,7 +40,7 @@ class User(SQLModel, table=True):
     status_message: Optional[str] = None
     last_seen: Optional[datetime] = None
     is_online: bool = False
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
     owned_contacts: list["Contact"] = Relationship(
         back_populates="owner",
@@ -66,7 +68,7 @@ class Contact(SQLModel, table=True):
     contact_user_id: int = Field(foreign_key="users.id", index=True)
     nickname: Optional[str] = None
     is_blocked: bool = Field(default=False)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
     owner: User = Relationship(
         back_populates="owned_contacts",
@@ -86,8 +88,10 @@ class Conversation(SQLModel, table=True):
     name: Optional[str] = None
     avatar_url: Optional[str] = None
     created_by: int = Field(foreign_key="users.id")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    # Disappearing messages: new messages expire this many seconds after sending.
+    disappear_after_seconds: Optional[int] = None
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
 
     creator: User = Relationship(back_populates="created_conversations")
     members: list["ConversationMember"] = Relationship(back_populates="conversation")
@@ -101,7 +105,7 @@ class ConversationMember(SQLModel, table=True):
     conversation_id: int = Field(foreign_key="conversations.id", index=True)
     user_id: int = Field(foreign_key="users.id", index=True)
     role: MemberRole = MemberRole.MEMBER
-    joined_at: datetime = Field(default_factory=datetime.utcnow)
+    joined_at: datetime = Field(default_factory=utcnow)
 
     conversation: Conversation = Relationship(back_populates="members")
     user: User = Relationship(back_populates="memberships")
@@ -117,7 +121,12 @@ class Message(SQLModel, table=True):
     content: str
     type: MessageType = MessageType.TEXT
     reply_to_message_id: Optional[int] = Field(default=None, foreign_key="messages.id")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
+    expires_at: Optional[datetime] = Field(default=None, index=True)
+    attachment_url: Optional[str] = None
+    attachment_name: Optional[str] = None
+    attachment_mime: Optional[str] = None
+    attachment_size: Optional[int] = None
 
     conversation: Conversation = Relationship(back_populates="messages")
     sender: User = Relationship(
@@ -140,10 +149,23 @@ class MessageStatus(SQLModel, table=True):
     message_id: int = Field(foreign_key="messages.id", index=True)
     user_id: int = Field(foreign_key="users.id", index=True)
     status: DeliveryStatus = DeliveryStatus.SENT
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
 
     message: Message = Relationship(back_populates="statuses")
     user: User = Relationship(back_populates="message_statuses")
+
+
+class Reaction(SQLModel, table=True):
+    """One emoji reaction per user per message (reacting again replaces it)."""
+
+    __tablename__ = "message_reactions"
+    __table_args__ = (UniqueConstraint("message_id", "user_id", name="uq_reaction_user"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    message_id: int = Field(foreign_key="messages.id", index=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    emoji: str
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class Session(SQLModel, table=True):
@@ -152,7 +174,7 @@ class Session(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="users.id", index=True)
     token: str = Field(unique=True, index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
     expires_at: datetime
 
     user: User = Relationship(back_populates="sessions")

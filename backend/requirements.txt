@@ -1,8 +1,12 @@
-fastapi>=0.115.0
-uvicorn[standard]>=0.32.0
-sqlmodel>=0.0.22
-python-jose[cryptography]>=3.3.0
-passlib[bcrypt]>=1.7.4
-websockets>=13.0
-python-multipart>=0.0.12
-python-dotenv>=1.0.0
+# Versions are pinned to the set the test suite runs against, so a redeploy builds exactly
+# what CI verified. sqlmodel 0.0.45+ switched to timezone-aware (UTC-only) datetimes, which
+# this schema does not use yet, so stay on 0.0.44 / SQLAlchemy 2.0 until that migration is done.
+fastapi==0.162.0
+uvicorn[standard]==0.54.0
+sqlmodel==0.0.44
+SQLAlchemy==2.0.55
+pydantic==2.14.1
+python-jose[cryptography]==3.5.0
+websockets==17.3
+python-multipart==0.0.32
+python-dotenv==1.2.4
