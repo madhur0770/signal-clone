@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Clock, CornerUpLeft, FileText, Smile } from "lucide-react";
+import { Check, Clock, Copy, CornerUpLeft, FileText, Smile } from "lucide-react";
 
 import { resolveAttachmentUrl } from "@/lib/api";
 import {
@@ -95,6 +95,7 @@ export default function MessageBubble({
   onJumpTo,
 }: MessageBubbleProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   const time = formatClockTime(message.created_at);
   const overallStatus = getOverallStatus(message);
   const reactions = groupReactions(message.reactions, currentUserId);
@@ -261,6 +262,24 @@ export default function MessageBubble({
           >
             <CornerUpLeft className="h-4 w-4" />
           </button>
+          {message.content && (
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(message.content);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1500);
+                } catch {
+                  /* clipboard unavailable (insecure context); nothing to do */
+                }
+              }}
+              aria-label={copied ? "Copied" : "Copy text"}
+              className="rounded-full p-1.5 text-muted hover:bg-black/[0.06] hover:text-foreground dark:hover:bg-white/[0.1]"
+            >
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+            </button>
+          )}
           {pickerOpen && (
             <div
               role="menu"

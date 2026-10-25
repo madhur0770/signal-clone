@@ -1,6 +1,11 @@
 type WsEventHandler = (data: Record<string, unknown>) => void;
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/api/ws";
+// Always derived from the API address so the two can never point at different servers.
+export function toWebSocketUrl(apiUrl: string): string {
+  return `${apiUrl.replace(/\/+$/, "").replace(/^http/i, "ws")}/api/ws`;
+}
+
+const WS_URL = toWebSocketUrl(process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000");
 
 const BASE_RECONNECT_MS = 1000;
 const MAX_RECONNECT_MS = 15000;
