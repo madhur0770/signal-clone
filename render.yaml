@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: signal-clone-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALLOWED_ORIGINS
+        value: https://signal-clone-liard.vercel.app
+      - key: ALLOWED_ORIGIN_REGEX
+        value: https://signal-clone-.*\.vercel\.app
+      - key: SEED_ON_START
+        value: "true"
+      - key: DATABASE_URL
+        value: sqlite:////tmp/signal_clone.db
+      - key: UPLOAD_DIR
+        value: /tmp/uploads

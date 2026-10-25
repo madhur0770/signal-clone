@@ -260,6 +260,7 @@ The frontend deploys to Vercel and the backend to Railway, both from `main`.
 - **Environment variables:** `SECRET_KEY` (set a long random value), `ALLOWED_ORIGINS` (comma-separated frontend origins, e.g. the Vercel URL), optional `ALLOWED_ORIGIN_REGEX` for preview deployments, `DATABASE_URL`, `UPLOAD_DIR`, `MAX_UPLOAD_MB`, `SEED_ON_START`.
 - **Persistence:** SQLite and uploaded files live on the container's disk. On Railway, attach a volume and point `DATABASE_URL` / `UPLOAD_DIR` at it, otherwise data resets on every deploy.
 - **Pinned dependencies:** `backend/requirements.txt` pins exact versions. A newer SQLModel release rejects the naive-UTC datetimes this app uses, so unpinned installs can break on a rebuild.
+- **Render alternative:** `render.yaml` at the repo root defines a free web service for the backend (create it with New > Blueprint). Free instances sleep when idle and use temporary disk, so data resets on restart; seeded demo users are recreated on boot.
 - **Frontend:** set `NEXT_PUBLIC_API_URL` to the backend URL in Vercel.
 - Existing databases are upgraded automatically on startup (missing columns are added).
 
