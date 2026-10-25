@@ -1,0 +1,14 @@
+name: Keep API awake
+
+# The free hosting plan puts the API to sleep after ~15 minutes without traffic.
+# A light request every 10 minutes keeps the first page load fast.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl --fail --silent --show-error --max-time 60 --retry 2 https://signal-clone-api-17e2.onrender.com/health

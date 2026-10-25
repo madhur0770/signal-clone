@@ -4,7 +4,7 @@ A functional clone of Signal Messenger — real-time one-on-one and group messag
 
 **GitHub repo:** https://github.com/madhur0770/signal-clone
 **Live demo (frontend):** https://signal-clone-liard.vercel.app
-**Backend API:** https://signal-clone-production-df99.up.railway.app (interactive docs at `/docs`)
+**Backend API:** https://signal-clone-api-17e2.onrender.com (interactive docs at `/docs`). It runs on a free plan and sleeps when idle, so the first request after a quiet period can take up to 30 seconds.
 
 ---
 
@@ -242,7 +242,7 @@ npm install
 npm run dev
 ```
 
-Checks (also run in CI): `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`.
+Checks (also run in CI): `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`. Browser tests: `npx playwright install chromium` once, then `npm run e2e` (starts the API and the built frontend itself and signs in as two users to check live delivery and reactions).
 
 Frontend runs at `http://localhost:3000`. Set `NEXT_PUBLIC_API_URL` in a `.env.local` if your backend isn't at `http://localhost:8000`.
 
@@ -254,15 +254,25 @@ Any seeded phone number with OTP `123456`. See `backend/app/seed.py` for the ful
 
 ## Deployment
 
-The frontend deploys to Vercel and the backend to Railway, both from `main`.
+The frontend deploys to Vercel and the backend to Render, both from `main`. A scheduled workflow (`.github/workflows/keep-alive.yml`) pings the API every 10 minutes so it rarely sleeps.
 
-- **Backend start command:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT` (run from `backend/`).
-- **Environment variables:** `SECRET_KEY` (set a long random value), `ALLOWED_ORIGINS` (comma-separated frontend origins, e.g. the Vercel URL), optional `ALLOWED_ORIGIN_REGEX` for preview deployments, `DATABASE_URL`, `UPLOAD_DIR`, `MAX_UPLOAD_MB`, `SEED_ON_START`.
-- **Persistence:** SQLite and uploaded files live on the container's disk. On Railway, attach a volume and point `DATABASE_URL` / `UPLOAD_DIR` at it, otherwise data resets on every deploy.
+- **Backend:** `render.yaml` at the repo root is a Render Blueprint (New > Blueprint). It runs `uvicorn app.main:app --host 0.0.0.0 --port $PORT` from `backend/`. Any host that can run that command works (Railway, Fly.io, a VPS).
+- **Environment variables:** `SECRET_KEY` (a long random value), `ALLOWED_ORIGINS` (comma-separated frontend origins), optional `ALLOWED_ORIGIN_REGEX` for preview deployments, `DATABASE_URL`, `UPLOAD_DIR`, `MAX_UPLOAD_MB`, `SEED_ON_START`.
+- **Persistence:** SQLite and uploaded files live on the instance's disk, which is temporary on free plans, so chats reset when it restarts. The demo users are re-created on boot (`SEED_ON_START=true`). For durable data, point `DATABASE_URL` at a hosted Postgres database and use a persistent disk or object storage for uploads.
 - **Pinned dependencies:** `backend/requirements.txt` pins exact versions. A newer SQLModel release rejects the naive-UTC datetimes this app uses, so unpinned installs can break on a rebuild.
-- **Render alternative:** `render.yaml` at the repo root defines a free web service for the backend (create it with New > Blueprint). Free instances sleep when idle and use temporary disk, so data resets on restart; seeded demo users are recreated on boot.
-- **Frontend:** set `NEXT_PUBLIC_API_URL` to the backend URL in Vercel.
+- **Frontend:** set `NEXT_PUBLIC_API_URL` to the backend URL in Vercel. The WebSocket address is derived from it, so no second variable is needed. Redeploy after changing it, since it is read at build time.
 - Existing databases are upgraded automatically on startup (missing columns are added).
+
+## Security notes
+
+This is a demo, and some choices would change in production:
+
+- **Mock login:** the OTP is a fixed code (`123456`) and nothing is sent. A real deployment needs an SMS/email provider, rate limiting, and expiring one-time codes.
+- **Token storage:** the JWT is kept in `localStorage` so a page reload keeps you signed in. That is readable by any script on the page; httpOnly cookies are the safer option. Sessions are also tracked server-side, so logging out revokes the token.
+- **No real encryption:** messages are stored as plaintext. "End-to-end encrypted" in the UI is part of the Signal look and is not implemented.
+- **Uploads:** files get random names, are size-limited (10 MB), served with `nosniff`, and only raster images render inline; everything else downloads. There is no virus scanning.
+- **CORS:** only the origins in `ALLOWED_ORIGINS` (plus the optional regex) can call the API from a browser.
+- **Secrets:** the app logs a warning if `SECRET_KEY` is left at its default.
 
 ---
 
@@ -283,4 +293,4 @@ The frontend deploys to Vercel and the backend to Railway, both from `main`.
 
 **Also implemented:** reply-to, emoji reactions, image/file attachments, disappearing messages, editable profile, group rename and admin roles, blocked-contacts management, load-earlier pagination, automatic WebSocket reconnect, a responsive layout for phones, dark mode, and keyboard shortcuts (Enter to send, Esc to close).
 
-**Tests and CI:** the backend has a pytest suite (REST, WebSocket, uploads, expiry, migrations) and the frontend has Vitest tests; GitHub Actions runs lint, tests and the production build on every push and pull request.
+**Tests and CI:** the backend has a pytest suite (REST, WebSocket, uploads, expiry, migrations), the frontend has Vitest tests, and Playwright drives the real app in a browser; GitHub Actions runs lint, tests and the production build on every push and pull request.
