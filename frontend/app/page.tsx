@@ -14,12 +14,14 @@ function ChatApp() {
   const activeConversation = conversations.find((c) => c.id === activeId);
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-dvh overflow-hidden">
       <Sidebar />
       {activeConversation ? (
         <ChatPane conversation={activeConversation} />
       ) : (
-        <EmptyState />
+        <div className="hidden min-w-0 flex-1 md:flex">
+          <EmptyState />
+        </div>
       )}
     </div>
   );

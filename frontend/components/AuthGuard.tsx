@@ -23,7 +23,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   if (!isHydrated || !token) {
     return (
-      <div className="flex h-screen items-center justify-center bg-surface">
+      <div className="flex h-dvh items-center justify-center bg-surface">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
       </div>
     );
@@ -31,7 +31,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   if (isLoading && conversations.length === 0) {
     return (
-      <div className="flex h-screen items-center justify-center bg-surface">
+      <div className="flex h-dvh items-center justify-center bg-surface">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
       </div>
     );

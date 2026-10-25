@@ -34,7 +34,11 @@ export default function Sidebar() {
 
   return (
     <>
-      <aside className="flex h-full w-[360px] shrink-0 flex-col border-r border-border bg-panel">
+      <aside
+        className={`h-full w-full shrink-0 flex-col border-r border-border bg-panel md:flex md:w-[360px] ${
+          activeId == null ? "flex" : "hidden"
+        }`}
+      >
         <div className="flex items-center justify-between px-4 pb-2 pt-5">
           <div className="flex items-center gap-3">
             <Avatar
