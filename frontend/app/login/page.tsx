@@ -21,12 +21,23 @@ export default function LoginPage() {
   const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [slow, setSlow] = useState(false);
 
   useEffect(() => {
     if (isHydrated && token) {
       router.replace("/");
     }
   }, [isHydrated, token, router]);
+
+  // The free hosting plan puts the API to sleep when idle; tell people why the first request is slow.
+  useEffect(() => {
+    if (!loading) return;
+    const timer = setTimeout(() => setSlow(true), 4000);
+    return () => {
+      clearTimeout(timer);
+      setSlow(false);
+    };
+  }, [loading]);
 
   const handleRequestOtp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,10 +114,11 @@ export default function LoginPage() {
               </div>
 
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-foreground">
+                <label htmlFor="phone" className="mb-1.5 block text-sm font-medium text-foreground">
                   Phone number
                 </label>
                 <input
+                  id="phone"
                   type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
@@ -117,10 +129,11 @@ export default function LoginPage() {
               </div>
 
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-foreground">
+                <label htmlFor="username" className="mb-1.5 block text-sm font-medium text-foreground">
                   Username <span className="font-normal text-muted">(new users)</span>
                 </label>
                 <input
+                  id="username"
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
@@ -130,10 +143,11 @@ export default function LoginPage() {
               </div>
 
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-foreground">
+                <label htmlFor="displayName" className="mb-1.5 block text-sm font-medium text-foreground">
                   Display name <span className="font-normal text-muted">(new users)</span>
                 </label>
                 <input
+                  id="displayName"
                   type="text"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
@@ -164,10 +178,11 @@ export default function LoginPage() {
               </div>
 
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-foreground">
+                <label htmlFor="otp" className="mb-1.5 block text-sm font-medium text-foreground">
                   6-digit code
                 </label>
                 <input
+                  id="otp"
                   type="text"
                   inputMode="numeric"
                   maxLength={6}
@@ -202,6 +217,14 @@ export default function LoginPage() {
             </form>
           )}
 
+          {loading && slow && (
+            <p
+              role="status"
+              className="mt-4 rounded-xl bg-accent/10 px-4 py-3 text-center text-sm text-foreground"
+            >
+              Waking up the server. The first request can take up to 30 seconds.
+            </p>
+          )}
           {error && (
             <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-center text-sm text-red-600 dark:bg-red-950/40 dark:text-red-400">
               {error}

@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronDown } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import MessageBubble from "@/components/MessageBubble";
@@ -31,6 +32,7 @@ export default function MessageList({
   const previousLastId = useRef<number | null>(null);
   const previousHeight = useRef<number | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [showJump, setShowJump] = useState(false);
 
   const setReplyingTo = useStore((s) => s.setReplyingTo);
   const toggleReaction = useStore((s) => s.toggleReaction);
@@ -71,9 +73,12 @@ export default function MessageList({
   const handleScroll = () => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
-    nearBottomRef.current =
-      scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < NEAR_BOTTOM_PX;
+    const distance = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+    nearBottomRef.current = distance < NEAR_BOTTOM_PX;
+    setShowJump(distance > NEAR_BOTTOM_PX * 3);
   };
+
+  const scrollToBottom = () => bottomRef.current?.scrollIntoView({ behavior: "smooth" });
 
   const handleLoadOlder = async () => {
     setLoadingOlder(true);
@@ -98,6 +103,7 @@ export default function MessageList({
   }, []);
 
   return (
+    <div className="relative flex min-h-0 flex-1 flex-col">
     <div
       ref={scrollerRef}
       onScroll={handleScroll}
@@ -159,6 +165,17 @@ export default function MessageList({
         })}
         <div ref={bottomRef} />
       </div>
+    </div>
+      {showJump && (
+        <button
+          type="button"
+          onClick={scrollToBottom}
+          aria-label="Scroll to latest message"
+          className="absolute bottom-4 right-4 rounded-full border border-border bg-panel p-2 text-muted shadow-lg transition hover:text-foreground md:right-8"
+        >
+          <ChevronDown className="h-5 w-5" />
+        </button>
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { WebSocketClient } from "./ws";
+import { WebSocketClient, toWebSocketUrl } from "./ws";
 
 class FakeSocket {
   static instances: FakeSocket[] = [];
@@ -145,5 +145,12 @@ describe("WebSocketClient", () => {
     off();
     FakeSocket.instances[0].push({ type: "typing" });
     expect(handler).not.toHaveBeenCalled();
+  });
+});
+
+describe("toWebSocketUrl", () => {
+  it("follows the API address, so the socket can't point at a different server", () => {
+    expect(toWebSocketUrl("https://api.example.com")).toBe("wss://api.example.com/api/ws");
+    expect(toWebSocketUrl("http://localhost:8000/")).toBe("ws://localhost:8000/api/ws");
   });
 });
