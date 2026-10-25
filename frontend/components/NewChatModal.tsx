@@ -30,10 +30,7 @@ export default function NewChatModal({ mode, onClose }: NewChatModalProps) {
   const [addingId, setAddingId] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!searchQuery.trim()) {
-      setSearchResults([]);
-      return;
-    }
+    if (!searchQuery.trim()) return;
     const timer = setTimeout(async () => {
       try {
         const results = await searchUsers(searchQuery);

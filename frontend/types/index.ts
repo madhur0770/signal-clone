@@ -34,23 +34,34 @@ export interface ConversationMember {
   user: User;
 }
 
-export interface Conversation {
-  id: number;
-  type: ConversationType;
-  name: string | null;
-  avatar_url: string | null;
-  created_by: number;
-  created_at: string;
-  updated_at: string;
-  members: ConversationMember[];
-}
-
 export interface MessageStatus {
   id: number;
   message_id: number;
   user_id: number;
   status: DeliveryStatus;
   updated_at: string;
+}
+
+export interface Reaction {
+  user_id: number;
+  emoji: string;
+}
+
+export interface ReplyPreview {
+  id: number;
+  sender_id: number;
+  sender_name: string;
+  content: string;
+  type: MessageType;
+  attachment_name: string | null;
+}
+
+export interface Attachment {
+  url: string;
+  name: string;
+  mime: string;
+  size: number;
+  type: MessageType;
 }
 
 export interface Message {
@@ -60,9 +71,30 @@ export interface Message {
   content: string;
   type: MessageType;
   reply_to_message_id: number | null;
+  reply_to: ReplyPreview | null;
   created_at: string;
+  expires_at: string | null;
+  attachment_url: string | null;
+  attachment_name: string | null;
+  attachment_mime: string | null;
+  attachment_size: number | null;
   sender: User;
   statuses: MessageStatus[];
+  reactions: Reaction[];
+}
+
+export interface Conversation {
+  id: number;
+  type: ConversationType;
+  name: string | null;
+  avatar_url: string | null;
+  created_by: number;
+  disappear_after_seconds: number | null;
+  created_at: string;
+  updated_at: string;
+  members: ConversationMember[];
+  last_message?: Message | null;
+  unread_count?: number;
 }
 
 export interface TokenResponse {

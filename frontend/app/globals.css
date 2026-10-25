@@ -94,3 +94,18 @@ body {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
+
+@keyframes message-flash {
+  0%,
+  100% {
+    background: transparent;
+  }
+  30% {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+}
+
+.message-flash {
+  animation: message-flash 1.5s ease-out;
+  border-radius: 1rem;
+}

@@ -8,7 +8,7 @@ Run from the backend/ directory:
     python -m app.seed
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from sqlmodel import Session, select
 
@@ -23,8 +23,10 @@ from app.models import (
     Message,
     MessageStatus,
     MessageType,
+    Reaction,
     User,
 )
+from app.timeutil import utcnow
 
 
 def seed() -> None:
@@ -36,7 +38,7 @@ def seed() -> None:
             print("Database already seeded. Skipping.")
             return
 
-        now = datetime.utcnow()
+        now = utcnow()
 
         users_data = [
             {
@@ -256,6 +258,15 @@ def seed() -> None:
                         updated_at=msg.created_at + timedelta(minutes=5),
                     )
                 )
+        db.commit()
+
+        # A few reactions so the feature is visible out of the box.
+        first_group_message = db.exec(
+            select(Message).where(Message.conversation_id == group.id).order_by(Message.id)
+        ).first()
+        if first_group_message:
+            for reactor, emoji in [(bob.id, "👍"), (carol.id, "🎉")]:
+                db.add(Reaction(message_id=first_group_message.id, user_id=reactor, emoji=emoji))
         db.commit()
 
         print("Seed complete!")

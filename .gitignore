@@ -10,3 +10,8 @@ node_modules/
 .next/
 .env.local
 backend/signal_clone.db
+
+# Backend runtime data
+backend/uploads/
+.pytest_cache/
+.ruff_cache/

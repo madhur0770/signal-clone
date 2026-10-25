@@ -2,126 +2,123 @@
 
 import { useEffect } from "react";
 
-import { getMessages, updateMessageStatus } from "@/lib/api";
-import { getConversationTitle, getLastMessagePreview, getUnreadCount } from "@/lib/utils";
+import { getConversationTitle, getLastMessagePreview } from "@/lib/utils";
 import { wsClient } from "@/lib/ws";
 import { useStore } from "@/store/useStore";
+import type { DeliveryStatus, Message, Reaction, User } from "@/types";
 
+/** Routes realtime server events into the store. Subscribes once per session. */
 export default function WebSocketBridge() {
   const token = useStore((s) => s.token);
-  const user = useStore((s) => s.user);
-  const setTyping = useStore((s) => s.setTyping);
-  const loadConversations = useStore((s) => s.loadConversations);
-  const activeConversationId = useStore((s) => s.activeConversationId);
-  const addToast = useStore((s) => s.addToast);
 
   useEffect(() => {
     if (!token) return;
+    const store = () => useStore.getState();
 
-    const unsubMessage = wsClient.on("message", async (data) => {
-      const payload = data.message as {
-        id: number;
-        conversation_id: number;
-        sender_id: number;
-      } | undefined;
+    const unsubs = [
+      wsClient.on("open", (data) => {
+        // After a reconnect we may have missed events, so reload instead of trusting the cache.
+        if (data.reconnect) store().resync();
+      }),
 
-      if (!payload || !user) return;
+      wsClient.on("message", (data) => {
+        const message = data.message as Message | undefined;
+        const me = store().user;
+        if (!message || !me) return;
 
-      try {
-        const messages = await getMessages(payload.conversation_id);
-        const last = messages[messages.length - 1];
-        useStore.setState((state) => ({
-          messagesByConversation: {
-            ...state.messagesByConversation,
-            [payload.conversation_id]: messages,
-          },
-          previews: last
-            ? {
-                ...state.previews,
-                [payload.conversation_id]: {
-                  lastMessage: getLastMessagePreview(last),
-                  lastMessageAt: last.created_at,
-                  unreadCount: getUnreadCount(messages, user.id),
-                },
-              }
-            : state.previews,
-        }));
+        const alreadyHave = store().messagesByConversation[message.conversation_id]?.some(
+          (m) => m.id === message.id
+        );
+        store().addIncomingMessage(message);
 
-        // Handle active conversation read marking
-        if (payload.conversation_id === activeConversationId && payload.sender_id !== user.id) {
-          updateMessageStatus(payload.id, "read");
+        const isActive = store().activeConversationId === message.conversation_id;
+        if (!alreadyHave && message.sender_id !== me.id && !isActive) {
+          const conversation = store().conversations.find(
+            (c) => c.id === message.conversation_id
+          );
+          store().addToast(
+            conversation ? getConversationTitle(conversation, me.id) : "New message",
+            getLastMessagePreview(message)
+          );
         }
+      }),
 
-        if (last && payload.conversation_id !== activeConversationId && last.sender_id !== user.id) {
-          const conversation = useStore.getState().conversations.find((c) => c.id === payload.conversation_id);
-          const title = conversation ? getConversationTitle(conversation, user.id) : "New message";
-          const body = getLastMessagePreview(last);
-          addToast(title, body);
-        }
-      } catch {
-        // ignore
-      }
+      wsClient.on("messages_status", (data) => {
+        store().applyStatuses(
+          data.conversation_id as number,
+          data.message_ids as number[],
+          data.user_id as number,
+          data.status as DeliveryStatus
+        );
+      }),
 
-      loadConversations();
-    });
+      wsClient.on("message_status", (data) => {
+        store().applyStatuses(
+          data.conversation_id as number,
+          [data.message_id as number],
+          data.user_id as number,
+          data.status as DeliveryStatus
+        );
+      }),
 
-    const unsubTyping = wsClient.on("typing", (data) => {
-      const conversationId = data.conversation_id as number;
-      const userId = data.user_id as number;
-      if (conversationId && userId) {
-        setTyping(conversationId, userId);
-      }
-    });
+      wsClient.on("reaction", (data) => {
+        store().setMessageReactions(
+          data.conversation_id as number,
+          data.message_id as number,
+          data.reactions as Reaction[]
+        );
+      }),
 
-    const unsubConversationCreated = wsClient.on("conversation_created", () => {
-      loadConversations();
-    });
+      wsClient.on("messages_expired", (data) => {
+        store().removeMessages(
+          data.conversation_id as number,
+          data.message_ids as number[]
+        );
+      }),
 
-    const unsubStatus = wsClient.on("message_status", (data) => {
-      const { message_id, user_id, status, conversation_id } = data as {
-        message_id: number;
-        user_id: number;
-        status: string;
-        conversation_id: number;
-      };
+      wsClient.on("typing", (data) => {
+        const conversationId = data.conversation_id as number;
+        const userId = data.user_id as number;
+        if (conversationId && userId) store().setTyping(conversationId, userId);
+      }),
 
-      if (!user) return;
-
-      useStore.setState((state) => {
-        const messages = state.messagesByConversation[conversation_id] ?? [];
-        const updatedMessages = messages.map((msg) => {
-          if (msg.id !== message_id) return msg;
-          return {
-            ...msg,
-            statuses: msg.statuses.map((s) =>
-              s.user_id === user_id ? { ...s, status: status as any } : s
-            ),
-          };
+      wsClient.on("presence", (data) => {
+        store().applyUserUpdate({
+          id: data.user_id as number,
+          is_online: data.is_online as boolean,
+          last_seen: (data.last_seen as string | null) ?? null,
         });
+      }),
 
-        return {
-          messagesByConversation: {
-            ...state.messagesByConversation,
-            [conversation_id]: updatedMessages,
-          },
-          previews: {
-            ...state.previews,
-            [conversation_id]: {
-              ...state.previews[conversation_id],
-              unreadCount: getUnreadCount(updatedMessages, user.id),
-            },
-          },
-        };
-      });
-    });
+      wsClient.on("user_updated", (data) => {
+        const user = data.user as User | undefined;
+        if (user) store().applyUserUpdate(user);
+      }),
 
-    return () => {
-      unsubMessage();
-      unsubTyping();
-      unsubConversationCreated();
-      unsubStatus();
-    };
-  }, [token, user, setTyping, loadConversations, activeConversationId, addToast]);
+      // Anything that changes a conversation's shape: reload the (single-request) list.
+      ...["conversation_created", "conversation_updated", "member_added"].map((type) =>
+        wsClient.on(type, () => {
+          store().loadConversations().catch(() => undefined);
+        })
+      ),
+
+      wsClient.on("member_removed", (data) => {
+        const conversationId = data.conversation_id as number;
+        if (data.removed_user_id === store().user?.id) {
+          // Leaving yourself already dropped it locally; only announce being removed by others.
+          const stillListed = store().conversations.some((c) => c.id === conversationId);
+          store().dropConversation(conversationId);
+          if (stillListed) {
+            store().addToast("Removed from group", "You're no longer in that conversation.");
+          }
+        } else {
+          store().loadConversations().catch(() => undefined);
+        }
+      }),
+    ];
+
+    return () => unsubs.forEach((unsubscribe) => unsubscribe());
+  }, [token]);
 
   return null;
 }
