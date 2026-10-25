@@ -1,11 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { Pencil, Timer, X } from "lucide-react";
 
 import Avatar from "@/components/Avatar";
 import ProfileModal from "@/components/ProfileModal";
-import { addMember, removeMember, searchUsers } from "@/lib/api";
+import DisappearingModal from "@/components/DisappearingModal";
+import {
+  addMember,
+  removeMember,
+  searchUsers,
+  updateConversation,
+  updateMemberRole,
+} from "@/lib/api";
+import { formatTimerLabel } from "@/lib/utils";
 import { useStore } from "@/store/useStore";
 import type { Contact, Conversation, User } from "@/types";
 
@@ -28,6 +36,10 @@ export default function GroupInfoModal({
   const [loading, setLoading] = useState<Record<number, boolean>>({});
   const [error, setError] = useState("");
   const [profileContact, setProfileContact] = useState<Contact | null>(null);
+  const [showTimer, setShowTimer] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState(conversation.name ?? "");
+  const dropConversation = useStore((s) => s.dropConversation);
 
   const currentUserMember = conversation.members.find(
     (m) => m.user_id === currentUser.id
@@ -35,10 +47,7 @@ export default function GroupInfoModal({
   const isAdmin = currentUserMember?.role === "admin";
 
   useEffect(() => {
-    if (!searchQuery.trim()) {
-      setSearchResults([]);
-      return;
-    }
+    if (!searchQuery.trim()) return;
     const timer = setTimeout(async () => {
       try {
         const results = await searchUsers(searchQuery);
@@ -92,13 +101,42 @@ export default function GroupInfoModal({
     }
   };
 
+  const handleRename = async () => {
+    const name = nameDraft.trim();
+    if (!name || name === conversation.name) {
+      setEditingName(false);
+      return;
+    }
+    setError("");
+    try {
+      await updateConversation(conversation.id, { name });
+      await loadConversations();
+      setEditingName(false);
+    } catch {
+      setError("Failed to rename group");
+    }
+  };
+
+  const handleRole = async (userId: number, role: "admin" | "member") => {
+    setLoading((prev) => ({ ...prev, [userId]: true }));
+    setError("");
+    try {
+      await updateMemberRole(conversation.id, userId, role);
+      await loadConversations();
+    } catch {
+      setError("Failed to change role");
+    } finally {
+      setLoading((prev) => ({ ...prev, [userId]: false }));
+    }
+  };
+
   const handleLeave = async () => {
     setLoading((prev) => ({ ...prev, [currentUser.id]: true }));
     setError("");
     try {
       await removeMember(conversation.id, currentUser.id);
+      dropConversation(conversation.id);
       await loadConversations();
-      useStore.setState({ activeConversationId: null });
       onClose();
     } catch {
       setError("Failed to leave group");
@@ -111,9 +149,39 @@ export default function GroupInfoModal({
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
         <div className="flex w-full max-w-md max-h-[90vh] flex-col rounded-2xl bg-panel p-6 shadow-xl">
           <div className="mb-4 flex shrink-0 items-center justify-between">
-            <h2 className="text-lg font-semibold text-foreground">
-              {conversation.name ?? "Group Info"}
-            </h2>
+            {editingName ? (
+              <input
+                autoFocus
+                value={nameDraft}
+                maxLength={60}
+                onChange={(e) => setNameDraft(e.target.value)}
+                onBlur={handleRename}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleRename();
+                  if (e.key === "Escape") {
+                    e.stopPropagation();
+                    setNameDraft(conversation.name ?? "");
+                    setEditingName(false);
+                  }
+                }}
+                aria-label="Group name"
+                className="min-w-0 flex-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-lg font-semibold focus:border-accent focus:outline-none"
+              />
+            ) : (
+              <h2 className="flex min-w-0 items-center gap-2 text-lg font-semibold text-foreground">
+                <span className="truncate">{conversation.name ?? "Group Info"}</span>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setEditingName(true)}
+                    aria-label="Rename group"
+                    className="rounded p-1 text-muted hover:text-foreground"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                )}
+              </h2>
+            )}
             <button
               type="button"
               onClick={onClose}
@@ -124,6 +192,18 @@ export default function GroupInfoModal({
           </div>
 
           <div className="flex-1 space-y-6 overflow-y-auto pr-2">
+            <button
+              type="button"
+              onClick={() => setShowTimer(true)}
+              className="flex w-full items-center justify-between rounded-xl border border-border px-4 py-3 text-left text-sm hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
+            >
+              <span className="flex items-center gap-3 font-medium text-foreground">
+                <Timer className="h-4 w-4 text-muted" />
+                Disappearing messages
+              </span>
+              <span className="text-muted">{formatTimerLabel(conversation.disappear_after_seconds)}</span>
+            </button>
+
             <div>
               <h3 className="mb-3 text-sm font-medium text-muted">
                 Members ({conversation.members.length})
@@ -159,17 +239,30 @@ export default function GroupInfoModal({
                     </div>
 
                     {isAdmin && member.user_id !== currentUser.id && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRemove(member.user_id);
-                        }}
-                        disabled={loading[member.user_id]}
-                        className="ml-2 shrink-0 text-xs font-semibold text-red-500 transition hover:text-red-600 disabled:opacity-50"
-                      >
-                        {loading[member.user_id] ? "Removing..." : "Remove"}
-                      </button>
+                      <div className="ml-2 flex shrink-0 items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRole(member.user_id, member.role === "admin" ? "member" : "admin");
+                          }}
+                          disabled={loading[member.user_id]}
+                          className="text-xs font-semibold text-accent transition hover:opacity-80 disabled:opacity-50"
+                        >
+                          {member.role === "admin" ? "Remove admin" : "Make admin"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemove(member.user_id);
+                          }}
+                          disabled={loading[member.user_id]}
+                          className="text-xs font-semibold text-red-500 transition hover:text-red-600 disabled:opacity-50"
+                        >
+                          {loading[member.user_id] ? "Working..." : "Remove"}
+                        </button>
+                      </div>
                     )}
                   </li>
                 ))}
@@ -231,6 +324,14 @@ export default function GroupInfoModal({
           </div>
         </div>
       </div>
+
+      {showTimer && (
+        <DisappearingModal
+          conversation={conversation}
+          canEdit={isAdmin}
+          onClose={() => setShowTimer(false)}
+        />
+      )}
 
       {profileContact && (
         <ProfileModal

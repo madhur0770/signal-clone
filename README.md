@@ -16,7 +16,8 @@ A functional clone of Signal Messenger — real-time one-on-one and group messag
 - Tailwind CSS v4
 - Axios (HTTP client)
 - Native WebSocket client for real-time events
-- lucide-react (icons), date-fns (time formatting)
+- lucide-react (icons)
+- Vitest + Testing Library for tests
 
 **Backend**
 - FastAPI (Python)
@@ -38,13 +39,17 @@ signal-clone/
 │       ├── models.py         # SQLModel table definitions
 │       ├── schemas.py        # Pydantic request/response schemas
 │       ├── auth.py           # JWT + session helpers, phone validation
-│       ├── database.py       # DB engine/session setup
+│       ├── database.py       # DB engine/session setup + startup column migration
+│       ├── services.py       # Membership/blocking rules, message creation, status + expiry logic
+│       ├── uploads.py        # Attachment storage and validation
+│       ├── timeutil.py       # Naive-UTC clock helper
 │       ├── seed.py           # Seed script (users, contacts, conversations, messages)
 │       └── routers/
 │           ├── auth.py           # /api/auth — OTP login, session, logout
 │           ├── contacts.py       # /api/contacts — CRUD, search, block/unblock
 │           ├── conversations.py  # /api/conversations — create, list, members
-│           ├── messages.py       # /api/... — send/list messages, status updates
+│           ├── messages.py       # /api/... — send/list messages, status, read, reactions
+│           ├── uploads.py        # /api/uploads — attachment upload/download
 │           └── websocket.py      # /api/ws — WebSocket connection manager
 └── frontend/
     ├── app/                  # Next.js routes (login, chat, etc.)
@@ -98,6 +103,7 @@ All tables are defined via SQLModel in `backend/app/models.py`.
 | type | enum: `direct` \| `group` | |
 | name | str, nullable | group name; null for direct chats |
 | avatar_url | str, nullable | |
+| disappear_after_seconds | int, nullable | disappearing-message timer; null = off |
 | created_by | int, FK → users.id | |
 | created_at / updated_at | datetime | `updated_at` bumped on every new message, drives conversation-list sort order |
 
@@ -117,8 +123,10 @@ All tables are defined via SQLModel in `backend/app/models.py`.
 | conversation_id | int, FK → conversations.id | |
 | sender_id | int, FK → users.id | |
 | content | str | plaintext (encryption simulated, not real, per assignment spec) |
-| type | enum: `text` \| `image` \| `file` | image/file types defined for future use; only `text` is implemented |
-| reply_to_message_id | int, FK → messages.id, nullable | self-referential, supports reply-to (backend-ready; UI not yet built) |
+| type | enum: `text` \| `image` \| `file` | |
+| reply_to_message_id | int, FK → messages.id, nullable | self-referential, powers reply-to |
+| attachment_url / attachment_name / attachment_mime / attachment_size | nullable | set for `image` and `file` messages |
+| expires_at | datetime, nullable, indexed | set when the conversation has a disappearing-message timer |
 | created_at | datetime | |
 
 **message_status** — per-recipient delivery state
@@ -127,8 +135,17 @@ All tables are defined via SQLModel in `backend/app/models.py`.
 | id | int, PK | |
 | message_id | int, FK → messages.id | |
 | user_id | int, FK → users.id | one row per conversation member per message |
-| status | enum: `sent` \| `delivered` \| `read` | sender's own row is always `sent`; recipients start `delivered`, flip to `read` when they open the conversation |
+| status | enum: `sent` \| `delivered` \| `read` | sender's own row is always `sent`; recipients start `sent`, become `delivered` when they are online or next connect, and `read` when they open the conversation. Status never moves backwards |
 | updated_at | datetime | |
+
+**message_reactions** — one reaction per user per message
+| Column | Type | Notes |
+|---|---|---|
+| id | int, PK | |
+| message_id | int, FK → messages.id | |
+| user_id | int, FK → users.id | unique together with message_id |
+| emoji | str | |
+| created_at | datetime | |
 
 **sessions**
 | Column | Type | Notes |
@@ -150,7 +167,8 @@ All routes are prefixed with `/api`. Auth via `Authorization: Bearer <token>` he
 - `POST /auth/request-otp` — mocked, always "sends" OTP `123456`
 - `POST /auth/verify-otp` — verifies OTP, creates user on first login (registration), returns JWT + user
 - `GET /auth/me` — current user
-- `POST /auth/logout` — invalidates session
+- `PATCH /auth/me` — update display name / status message
+- `POST /auth/logout` — invalidates the current session only
 
 **Contacts**
 - `GET /contacts` — list current user's contacts
@@ -161,18 +179,30 @@ All routes are prefixed with `/api`. Auth via `Authorization: Bearer <token>` he
 - `POST /contacts/{id}/block` / `POST /contacts/{id}/unblock` — toggle blocking; enforced server-side on direct-message sending (mutual — either party blocking stops both directions)
 
 **Conversations**
-- `GET /conversations` — list current user's conversations
+- `GET /conversations` — list current user's conversations, each with `last_message` and `unread_count`
+- `PATCH /conversations/{id}` — rename a group / set the disappearing-message timer (`30s, 5m, 1h, 8h, 24h, 1w` or off)
+- `PATCH /conversations/{id}/members/{user_id}` — promote/demote an admin
+- `DELETE /conversations/{id}` — delete a conversation once it has no members
 - `POST /conversations` — create direct or group conversation
 - `POST /conversations/{id}/members` — add member (group only)
 - `DELETE /conversations/{id}/members/{user_id}` — remove member / leave group
 
 **Messages**
-- `GET /conversations/{id}/messages` — paginated message history
+- `GET /conversations/{id}/messages?limit=&before_id=` — message history, newest page first, paginated with `before_id`
+- `POST /conversations/{id}/read` — mark everything in the conversation read in one request
+- `PUT /messages/{id}/reaction` / `DELETE /messages/{id}/reaction` — set or clear your reaction
 - `POST /conversations/{id}/messages` — send message; broadcasts via WebSocket to all members; blocked if either party has blocked the other (direct conversations only)
 - `PATCH /messages/{id}/status` — update delivery/read status
 
+**Uploads**
+- `POST /uploads` — upload an attachment (multipart, 10 MB limit by default); returns the URL to attach to a message
+- `GET /uploads/{filename}` — fetch it. Raster images are shown inline; everything else is download-only
+
+**Health**
+- `GET /health` and `GET /api/health`
+
 **WebSocket**
-- `GET /ws?token=<jwt>` — persistent connection; server pushes `message`, `typing`, and `conversation_created` events to relevant connected clients
+- `GET /ws?token=<jwt>` — persistent connection; server pushes `message`, `message_status`, `messages_status`, `reaction`, `messages_expired`, `typing`, `presence`, `user_updated`, `conversation_created`, `conversation_updated`, `member_added` and `member_removed` events to the relevant connected clients. The client reconnects automatically with backoff and re-syncs on reconnect
 
 ---
 
@@ -190,7 +220,7 @@ python -m venv venv
 # macOS/Linux:
 source venv/bin/activate
 
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # or requirements.txt for runtime only
 cp .env.example .env   # fill in any required values, e.g. JWT secret
 
 python -m app.seed              # seeds sample users/contacts/conversations/messages
@@ -198,6 +228,11 @@ uvicorn app.main:app --reload --port 8000
 ```
 
 Backend runs at `http://localhost:8000`. Interactive API docs at `http://localhost:8000/docs`.
+
+```bash
+ruff check .
+pytest
+```
 
 ### Frontend
 
@@ -207,11 +242,26 @@ npm install
 npm run dev
 ```
 
+Checks (also run in CI): `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`.
+
 Frontend runs at `http://localhost:3000`. Set `NEXT_PUBLIC_API_URL` in a `.env.local` if your backend isn't at `http://localhost:8000`.
 
 ### Test login
 
 Any seeded phone number with OTP `123456`. See `backend/app/seed.py` for the full list of seeded users, or register a new account directly through the app (OTP is mocked and always accepts `123456`).
+
+---
+
+## Deployment
+
+The frontend deploys to Vercel and the backend to Railway, both from `main`.
+
+- **Backend start command:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT` (run from `backend/`).
+- **Environment variables:** `SECRET_KEY` (set a long random value), `ALLOWED_ORIGINS` (comma-separated frontend origins, e.g. the Vercel URL), optional `ALLOWED_ORIGIN_REGEX` for preview deployments, `DATABASE_URL`, `UPLOAD_DIR`, `MAX_UPLOAD_MB`, `SEED_ON_START`.
+- **Persistence:** SQLite and uploaded files live on the container's disk. On Railway, attach a volume and point `DATABASE_URL` / `UPLOAD_DIR` at it, otherwise data resets on every deploy.
+- **Pinned dependencies:** `backend/requirements.txt` pins exact versions. A newer SQLModel release rejects the naive-UTC datetimes this app uses, so unpinned installs can break on a rebuild.
+- **Frontend:** set `NEXT_PUBLIC_API_URL` to the backend URL in Vercel.
+- Existing databases are upgraded automatically on startup (missing columns are added).
 
 ---
 
@@ -221,11 +271,15 @@ Any seeded phone number with OTP `123456`. See `backend/app/seed.py` for the ful
 - **Avatars** are auto-generated from initials when no `avatar_url` is set, rather than requiring manual upload — a common, acceptable pattern and not required by the brief.
 - **Search** (conversations/contacts) matches against names/username/phone, not full message content — treated as contact/conversation discovery, not a message search feature.
 - **Blocking is mutual and direct-conversation-only** — if either party has blocked the other, sending fails in both directions; group messaging is unaffected by 1:1 blocks, matching Signal's real behavior.
-- **"Sending" message status** is implemented as an optimistic client-side UI state (shown immediately on send, before server confirmation) rather than a persisted database status, since a message that fails to send is never actually written to the database.
-- **Presence (online/last-seen)** is mocked/best-effort, not derived from real connection heartbeats beyond what the WebSocket connection lifecycle naturally provides.
+- **"Sending" message status** is an optimistic client-side state (shown immediately, rolled back if the send fails) rather than a persisted database status.
+- **Disappearing messages** are removed by a background task that runs every few seconds; the UI also hides expired messages immediately.
+- **Attachments** are stored on disk under random names; only URLs returned by the upload endpoint are accepted on messages.
+- **Presence (online/last-seen)** follows the WebSocket lifecycle: a user is online from their first connection until their last one closes.
 
 ## Feature Status
 
-**Must-haves:** all implemented — auth/OTP, contacts, 1:1 messaging (real-time, timestamps, receipts, typing, all four message statuses), group messaging (create/message/members/admin controls), toasts, settings placeholders.
+**Must-haves:** auth/OTP, contacts, 1:1 messaging (real-time, timestamps, receipts, typing, delivery states), group messaging (create/message/members/admin controls), toasts, settings.
 
-**Bonus:** dark mode ✅, keyboard shortcuts (Enter to send, Esc to close modals) ✅, profile viewer + block/unblock ✅ (not required by brief, added for completeness). Reply-to, reactions, attachments, disappearing messages, and a full responsive-design pass are not implemented in this submission.
+**Also implemented:** reply-to, emoji reactions, image/file attachments, disappearing messages, editable profile, group rename and admin roles, blocked-contacts management, load-earlier pagination, automatic WebSocket reconnect, a responsive layout for phones, dark mode, and keyboard shortcuts (Enter to send, Esc to close).
+
+**Tests and CI:** the backend has a pytest suite (REST, WebSocket, uploads, expiry, migrations) and the frontend has Vitest tests; GitHub Actions runs lint, tests and the production build on every push and pull request.
